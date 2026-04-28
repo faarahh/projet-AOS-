@@ -1,0 +1,25 @@
+api:
+  dashboard: true
+  insecure: true   # dashboard accessible via :8080
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: wams-network
+  consul:
+    rootKey: "traefik"
+    endpoints:
+      - "consul:8500"
+
+log:
+  level: DEBUG
+  
+
+
+
+accessLog: {}

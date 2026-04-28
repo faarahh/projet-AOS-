@@ -1,0 +1,59 @@
+"""
+users-service/app.py  (FIXED)
+------------------------------
+Same issue as lists/meals: the original exposed all routes without
+@token_required.  We register users_bp (from routes.py) which already
+has @token_required on every route.
+"""
+
+from flask import Flask, jsonify
+from flask_cors import CORS
+import os
+import signal
+import sys
+
+from database import db, init_db
+from routes import users_bp                          # ← was never registered
+from consul_registration import register_to_consul, deregister_from_consul
+
+app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": os.getenv("ALLOWED_ORIGINS", "*")}})
+
+# Init DB
+init_db(app)
+
+# Register blueprint
+app.register_blueprint(users_bp, url_prefix='/api/users')
+
+# ── Health / root ─────────────────────────────────────────────────────────────
+@app.route('/health')
+def health():
+    return jsonify({'status': 'healthy', 'service': 'users'}), 200
+
+@app.route('/')
+def index():
+    return jsonify({'message': 'Users Service is running!'}), 200
+
+# ── Graceful shutdown ─────────────────────────────────────────────────────────
+def cleanup(signum, frame):
+    print("\n🛑 Arrêt du service users...")
+    deregister_from_consul('users')
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, cleanup)
+signal.signal(signal.SIGTERM, cleanup)
+
+# ── Start ─────────────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5004))
+
+    print("🚀 Démarrage du Users Service...")
+    register_to_consul('users', port)
+
+    print(f"📌 Service sur http://localhost:{port}")
+    print("🔄 Appuyez sur Ctrl+C pour arrêter")
+
+    try:
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except KeyboardInterrupt:
+        cleanup(None, None)

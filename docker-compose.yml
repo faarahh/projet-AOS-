@@ -1,0 +1,184 @@
+version: '3.8'
+
+x-jwt: &jwt
+  JWT_SECRET: ${JWT_SECRET:-wams-jwt-secret-2025-change-in-prod}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVICES APPLICATIFS
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+
+  auth-service:
+    build: ./auth-service
+    ports: ["5001:5001"]
+    environment:
+      PORT: 5001
+      <<: *jwt
+      CONSUL_HOST: consul
+      ALLOWED_ORIGINS: "http://localhost:5173,http://localhost"
+    depends_on: [consul]
+    networks: [wams-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.auth.entrypoints=web"
+      - "traefik.http.services.auth.loadbalancer.server.port=5001"
+
+  lists-service:
+    build: ./lists-service
+    ports: ["5002:5002"]
+    environment:
+      PORT: 5002
+      <<: *jwt
+      CONSUL_HOST: consul
+      RABBITMQ_HOST: rabbitmq
+    depends_on: [consul, rabbitmq, auth-service]
+    networks: [wams-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lists.rule=PathPrefix(`/api/lists`)"
+      - "traefik.http.routers.lists.entrypoints=web"
+      - "traefik.http.services.lists.loadbalancer.server.port=5002"
+
+  meals-service:
+    build: ./meals-service
+    ports: ["5003:5003"]
+    environment:
+      PORT: 5003
+      <<: *jwt
+      CONSUL_HOST: consul
+      RABBITMQ_HOST: rabbitmq
+    depends_on: [consul, rabbitmq, auth-service]
+    networks: [wams-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.meals.rule=PathPrefix(`/api/meals`)"
+      - "traefik.http.routers.meals.entrypoints=web"
+      - "traefik.http.services.meals.loadbalancer.server.port=5003"
+
+  users-service:
+    build: ./users-service
+    ports: ["5004:5004"]
+    environment:
+      PORT: 5004
+      <<: *jwt
+      CONSUL_HOST: consul
+    depends_on: [consul, auth-service]
+    networks: [wams-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.users.rule=PathPrefix(`/api/users`)"
+      - "traefik.http.routers.users.entrypoints=web"
+      - "traefik.http.services.users.loadbalancer.server.port=5004"
+
+  group-service:
+    build: ./group-service
+    ports: ["5005:5005"]
+    environment:
+      PORT: 5005
+      <<: *jwt
+      CONSUL_HOST: consul
+    depends_on: [consul, auth-service]
+    networks: [wams-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.groups.rule=PathPrefix(`/api/groups`)"
+      - "traefik.http.routers.groups.entrypoints=web"
+      - "traefik.http.services.groups.loadbalancer.server.port=5005"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INFRASTRUCTURE
+# ─────────────────────────────────────────────────────────────────────────────
+
+  consul:
+    image: hashicorp/consul:1.17
+    ports: ["8500:8500"]
+    command: agent -dev -client=0.0.0.0
+    networks: [wams-network]
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks: [wams-network]
+
+  frontend:
+    build: ./frontend
+    ports:
+     - "3001:80"
+    networks:
+     - wams-network
+    depends_on:
+     - auth-service
+     - users-service
+     - lists-service
+     - meals-service
+     - group-service
+
+  
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRAEFIK — Reverse Proxy / Load Balancer
+# ─────────────────────────────────────────────────────────────────────────────
+
+  traefik:
+    image: traefik:v2.10
+    user: root
+    privileged: true
+    ports:
+      - "80:80"         # Point d'entrée HTTP
+      - "8080:8080"     # Dashboard Traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik/traefik.yml:/traefik.yml
+    networks: [wams-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=PathPrefix(`/dashboard`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+# ─────────────────────────────────────────────────────────────────────────────
+# MONITORING — Prometheus + Grafana
+# ─────────────────────────────────────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks: [wams-network]
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: wams2025
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on: [prometheus]
+    networks: [wams-network]
+
+networks:
+  wams-network:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:

@@ -1,0 +1,45 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  - job_name: 'auth-service'
+    static_configs:
+      - targets: ['auth-service:5001']
+    metrics_path: '/metrics'
+
+  - job_name: 'lists-service'
+    static_configs:
+      - targets: ['lists-service:5002']
+    metrics_path: '/metrics'
+
+  - job_name: 'meals-service'
+    static_configs:
+      - targets: ['meals-service:5003']
+    metrics_path: '/metrics'
+
+  - job_name: 'users-service'
+    static_configs:
+      - targets: ['users-service:5004']
+    metrics_path: '/metrics'
+
+  - job_name: 'group-service'
+    static_configs:
+      - targets: ['group-service:5005']
+    metrics_path: '/metrics'
+
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+
+  - job_name: 'consul'
+    static_configs:
+      - targets: ['consul:8500']
+    metrics_path: '/v1/agent/metrics'
+    params:
+      format: ['prometheus']
+
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['traefik:8082']

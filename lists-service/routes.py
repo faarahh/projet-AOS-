@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify, g
 from models import db, ShoppingList, ListItem, ListShare, Notification
 from auth_middleware import token_required
 from datetime import datetime
+from flask import Blueprint, jsonify, request
+from database import db
 
 lists_bp = Blueprint('lists', __name__)
 
@@ -283,3 +285,15 @@ def mark_all_read():
             .update({'is_read': True})
         db.session.commit()
     return jsonify({'message': 'All marked as read'}), 200
+
+lists_bp = Blueprint('lists_bp', __name__)
+
+@lists_bp.route('/', methods=['GET'])
+def get_lists():
+    # Exemple de retour simple
+    return jsonify({"service": "lists", "data": []}), 200
+
+@lists_bp.route('/test-msg', methods=['POST'])
+def test_manual_msg():
+    # Route pour tester manuellement si ton service répond
+    return jsonify({"message": "Route de test fonctionnelle"}), 200

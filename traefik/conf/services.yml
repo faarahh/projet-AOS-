@@ -1,0 +1,69 @@
+http:
+  # 1. On définit les "nettoyeurs" de préfixes
+  middlewares:
+    strip-auth:
+      stripPrefix:
+        prefixes: ["/api/auth"]
+    strip-lists:
+      stripPrefix:
+        prefixes: ["/api/lists"]
+    strip-meals:
+      stripPrefix:
+        prefixes: ["/api/meals"]
+    strip-users:
+      stripPrefix:
+        prefixes: ["/api/users"]
+    strip-groups:
+      stripPrefix:
+        prefixes: ["/api/groups"]
+
+  # 2. On lie les routers aux middlewares correspondants
+  routers:
+    auth:
+      rule: "PathPrefix(`/api/auth`)"
+      entryPoints: ["web"]
+      middlewares: ["strip-auth@file"] # @file est obligatoire ici
+      service: auth-service
+    lists:
+      rule: "PathPrefix(`/api/lists`)"
+      entryPoints: ["web"]
+      middlewares: ["strip-lists@file"]
+      service: lists-service
+    meals:
+      rule: "PathPrefix(`/api/meals`)"
+      entryPoints: ["web"]
+      middlewares: ["strip-meals@file"]
+      service: meals-service
+    users:
+      rule: "PathPrefix(`/api/users`)"
+      entryPoints: ["web"]
+      middlewares: ["strip-users@file"]
+      service: users-service
+    groups:
+      rule: "PathPrefix(`/api/groups`)"
+      entryPoints: ["web"]
+      middlewares: ["strip-groups@file"]
+      service: groups-service
+
+  # 3. Tes services restent les mêmes
+  services:
+    auth-service:
+      loadBalancer:
+        servers:
+          - url: "http://auth-service:5001"
+    lists-service:
+      loadBalancer:
+        servers:
+          - url: "http://lists-service:5002"
+    meals-service:
+      loadBalancer:
+        servers:
+          - url: "http://meals-service:5003"
+    users-service:
+      loadBalancer:
+        servers:
+          - url: "http://users-service:5004"
+    groups-service:
+      loadBalancer:
+        servers:
+          - url: "http://group-service:5005"

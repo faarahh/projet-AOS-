@@ -169,3 +169,15 @@ def generate_shopping_list():
         {'name': n, 'quantity': v['quantity'], 'unit': v['unit']}
         for n, v in agg.items()
     ]}), 200
+
+# Exemple dans votre fichier de routes
+@meals_bp.route('/', methods=['POST'])
+def create_meal():
+    data = request.json
+    # ... logique de sauvegarde en base de données ...
+    
+    # APPEL DE LA COMMUNICATION ASYNC
+    from app import publish_meal_event
+    publish_meal_event({"event": "MEAL_ADDED", "data": data})
+    
+    return jsonify({"message": "Repas créé et événement publié"}), 201

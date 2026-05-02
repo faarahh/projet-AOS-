@@ -15,7 +15,7 @@ services:
       PORT: 5001
       <<: *jwt
       CONSUL_HOST: consul
-      ALLOWED_ORIGINS: "http://localhost:5173,http://localhost"
+      ALLOWED_ORIGINS: "http://localhost:5173,http://localhost,http://localhost:3001"
     depends_on: [consul]
     networks: [wams-network]
     labels:
@@ -86,6 +86,19 @@ services:
       - "traefik.http.routers.groups.entrypoints=web"
       - "traefik.http.services.groups.loadbalancer.server.port=5005"
 
+  frontend:
+    build: ./frontend
+    ports:
+      - "3001:80"
+    networks:
+      - wams-network
+    depends_on:
+      - auth-service
+      - users-service
+      - lists-service
+      - meals-service
+      - group-service
+
 # ─────────────────────────────────────────────────────────────────────────────
 # INFRASTRUCTURE
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,28 +111,19 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.12-management
+    container_name: final-project-rabbitmq-1
     ports:
       - "5672:5672"
       - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-    networks: [wams-network]
-
-  frontend:
-    build: ./frontend
-    ports:
-     - "3001:80"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
-     - wams-network
-    depends_on:
-     - auth-service
-     - users-service
-     - lists-service
-     - meals-service
-     - group-service
-
-  
+      wams-network:
+        aliases:
+          - rabbitmq
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TRAEFIK — Reverse Proxy / Load Balancer
@@ -127,24 +131,16 @@ services:
 
   traefik:
     image: traefik:v2.10
-    user: root
-    privileged: true
+    container_name: traefik
     ports:
-      - "80:80"         # Point d'entrée HTTP
-      - "8080:8080"     # Dashboard Traefik
+      - "80:80"
+      - "8080:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./traefik/traefik.yml:/traefik.yml
-    networks: [wams-network]
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=PathPrefix(`/dashboard`)"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--entrypoints.web.address=:80"
+      - ./traefik/traefik.yml:/traefik.yml:ro
+      - ./traefik/conf:/etc/traefik/conf:ro
+    networks:
+      - wams-network
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MONITORING — Prometheus + Grafana
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +171,47 @@ services:
     depends_on: [prometheus]
     networks: [wams-network]
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LOGS — Stack ELK
+# ─────────────────────────────────────────────────────────────────────────────
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - wams-network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.0
+    ports:
+      - "5044:5044"
+      - "5000:5000/udp"
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+    networks:
+      - wams-network
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.0
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - wams-network
+    depends_on:
+      - elasticsearch
+
+# ─────────────────────────────────────────────────────────────────────────────
 networks:
   wams-network:
     driver: bridge
@@ -182,3 +219,5 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  es_data: {}
+  rabbitmq_data:
